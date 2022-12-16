@@ -1,4 +1,5 @@
 mod matrix;
+mod planner;
 mod udf;
 
 pub fn add(left: usize, right: usize) -> usize {
