@@ -3,6 +3,7 @@
 mod eval_stmt;
 mod extension_plan;
 mod matrix;
+mod planner;
 mod udf;
 mod utils;
 
