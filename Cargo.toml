@@ -8,3 +8,5 @@ datafusion = "14.0.0"
 arrow = "26.0.0"
 parquet = "26.0.0"
 bytemuck = "1.12.3"
+promql-parser = { git = "https://github.com/GreptimeTeam/promql-parser.git", rev = "7addaf19981eabda07c248a7a80ab835a9e61d54" }
+futures = "0.3.25"
