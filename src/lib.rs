@@ -1,6 +1,11 @@
+#![feature(result_flattening)]
+
+mod eval_stmt;
+mod extension_plan;
 mod matrix;
 mod planner;
 mod udf;
+mod utils;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right
