@@ -7,13 +7,17 @@ use datafusion::physical_plan::ColumnarValue;
 
 use crate::matrix::Matrix;
 
-struct ExtrapolateFactor {}
+pub struct ExtrapolateFactor {}
 
 impl ExtrapolateFactor {
     fn name() -> &'static str {
         "prom_extrapolate_factor"
     }
 
+    /// Input:
+    /// - timestamp, Matrix
+    /// - range_end, Array
+    /// - range, Array
     fn input_type() -> DataType {
         DataType::Dictionary(Box::new(DataType::Int64), Box::new(DataType::Int64))
     }
@@ -41,7 +45,7 @@ impl ExtrapolateFactor {
         let range_end = if let ColumnarValue::Array(array) = &input[1] {
             array
                 .as_any()
-                .downcast_ref::<Arc<PrimitiveArray<Int64Type>>>()
+                .downcast_ref::<PrimitiveArray<Int64Type>>()
                 .unwrap()
                 .clone()
         } else {
@@ -52,7 +56,7 @@ impl ExtrapolateFactor {
         let range = if let ColumnarValue::Array(array) = &input[2] {
             array
                 .as_any()
-                .downcast_ref::<Arc<PrimitiveArray<Int64Type>>>()
+                .downcast_ref::<PrimitiveArray<Int64Type>>()
                 .unwrap()
                 .clone()
         } else {
@@ -67,7 +71,7 @@ impl ExtrapolateFactor {
             let ts_array = matrix.get(index).unwrap();
             let ts_array = ts_array
                 .as_any()
-                .downcast_ref::<Arc<PrimitiveArray<Int64Type>>>()
+                .downcast_ref::<PrimitiveArray<Int64Type>>()
                 .unwrap()
                 .values();
             let range_end_array = range_end.values();

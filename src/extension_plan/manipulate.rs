@@ -51,7 +51,7 @@ impl SeriesManipulate {
         }
     }
 
-    fn calculate_output_schema(
+    pub fn calculate_output_schema(
         input_schema: &Schema,
         column_to_manipulate: &[String],
     ) -> SchemaRef {
@@ -118,6 +118,29 @@ pub struct SeriesManipulateExec {
 
     input: Arc<dyn ExecutionPlan>,
     output_schema: SchemaRef,
+}
+
+impl SeriesManipulateExec {
+    pub fn new(
+        start: Millisecond,
+        end: Millisecond,
+        interval: Millisecond,
+        range: Millisecond,
+        column_to_manipulate: Vec<String>,
+
+        input: Arc<dyn ExecutionPlan>,
+        output_schema: SchemaRef,
+    ) -> Self {
+        Self {
+            start,
+            end,
+            interval,
+            range,
+            column_to_manipulate,
+            input,
+            output_schema,
+        }
+    }
 }
 
 impl ExecutionPlan for SeriesManipulateExec {
@@ -223,6 +246,7 @@ impl SeriesManipulateStream {
 
         // calculate the range
         let ranges = self.calculate_range(&input);
+        println!("Manipulate ranges: {:?}", ranges);
 
         // transform columns
         let mut new_columns = input.columns().to_vec();
@@ -244,12 +268,12 @@ impl SeriesManipulateStream {
         let ts_column = input
             .column(ts_column_idx)
             .as_any()
-            .downcast_ref::<Arc<PrimitiveArray<TimestampMillisecondType>>>()
+            .downcast_ref::<PrimitiveArray<TimestampMillisecondType>>()
             .unwrap();
 
         let mut result = vec![];
 
-        for curr_ts in (self.start..self.end).step_by(self.interval as _) {
+        for curr_ts in (self.start..=self.end).step_by(self.interval as _) {
             let mut range_start = ts_column.len();
             let mut range_end = 0;
             for (index, ts) in ts_column.values().iter().enumerate() {
@@ -260,7 +284,7 @@ impl SeriesManipulateStream {
                     range_end = range_end.max(index);
                 }
             }
-            result.push((range_start as _, range_end as _));
+            result.push((range_start as _, (range_end - range_start + 1) as _));
         }
 
         result

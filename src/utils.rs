@@ -2,9 +2,10 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use arrow::array::{
-    Array, Float64Builder, Int64Builder, PrimitiveArray, StringArray, StringBuilder,
+    Array, Float64Builder, Int64Builder, PrimitiveArray, PrimitiveBuilder, StringArray,
+    StringBuilder,
 };
-use arrow::datatypes::{Float64Type, Int64Type, Schema};
+use arrow::datatypes::{Float64Type, Int64Type, Schema, TimestampMillisecondType};
 use arrow::record_batch::RecordBatch;
 use datafusion::common::DFSchema;
 
@@ -37,7 +38,7 @@ pub fn take_array_optional(array: &Arc<dyn Array>, indices: &[Option<usize>]) ->
         arrow::datatypes::DataType::Int64 => {
             let array = array
                 .as_any()
-                .downcast_ref::<Arc<PrimitiveArray<Int64Type>>>()
+                .downcast_ref::<PrimitiveArray<Int64Type>>()
                 .unwrap();
             let mut builder = Int64Builder::with_capacity(indices.len());
             for index in indices {
@@ -52,7 +53,7 @@ pub fn take_array_optional(array: &Arc<dyn Array>, indices: &[Option<usize>]) ->
         arrow::datatypes::DataType::Float64 => {
             let array = array
                 .as_any()
-                .downcast_ref::<Arc<PrimitiveArray<Float64Type>>>()
+                .downcast_ref::<PrimitiveArray<Float64Type>>()
                 .unwrap();
             let mut builder = Float64Builder::with_capacity(indices.len());
             for index in indices {
@@ -64,8 +65,24 @@ pub fn take_array_optional(array: &Arc<dyn Array>, indices: &[Option<usize>]) ->
             }
             Arc::new(builder.finish()) as _
         }
+        arrow::datatypes::DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None) => {
+            let array = array
+                .as_any()
+                .downcast_ref::<PrimitiveArray<TimestampMillisecondType>>()
+                .unwrap();
+            let mut builder =
+                PrimitiveBuilder::<TimestampMillisecondType>::with_capacity(indices.len());
+            for index in indices {
+                if let Some(i) = index {
+                    builder.append_value(array.value(*i));
+                } else {
+                    builder.append_null();
+                }
+            }
+            Arc::new(builder.finish()) as _
+        }
         arrow::datatypes::DataType::Utf8 => {
-            let array = array.as_any().downcast_ref::<Arc<StringArray>>().unwrap();
+            let array = array.as_any().downcast_ref::<StringArray>().unwrap();
             let mut builder = StringBuilder::with_capacity(indices.len(), indices.len());
             for index in indices {
                 if let Some(i) = index {
@@ -76,6 +93,6 @@ pub fn take_array_optional(array: &Arc<dyn Array>, indices: &[Option<usize>]) ->
             }
             Arc::new(builder.finish()) as _
         }
-        _ => unreachable!(),
+        _ => unreachable!("{:?}", array.data_type()),
     }
 }

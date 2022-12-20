@@ -1,2 +1,2 @@
-mod manipulate;
-mod normalize;
+pub mod manipulate;
+pub mod normalize;

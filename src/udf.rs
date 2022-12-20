@@ -1,2 +1,2 @@
-mod extrapolate_factor;
-mod increase;
+pub mod extrapolate_factor;
+pub mod increase;

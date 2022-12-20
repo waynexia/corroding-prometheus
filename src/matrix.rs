@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, DictionaryArray, Int64Array};
+use arrow::array::{Array, ArrayData, ArrayRef, DictionaryArray, Int64Array};
 use arrow::datatypes::{DataType, Int64Type};
 
 /// An compound logical "vector"/"array" type. Represent a "matrix" from promql
@@ -24,9 +24,27 @@ impl Matrix {
                 .map(|(offset, length)| bytemuck::cast::<[i32; 2], i64>([*offset, *length])),
         );
 
-        Self::new(Arc::new(
-            DictionaryArray::try_new(&key_array, &values).unwrap(),
+        // Build from ArrayData to bypass the "offset" checker. Because
+        // we are not using "keys" as-is.
+        // This paragraph is copied from arrow-rs dictionary_array.rs `try_new()`.
+        let mut data = ArrayData::builder(DataType::Dictionary(
+            Box::new(Self::key_type()),
+            Box::new(values.data_type().clone()),
         ))
+        .len(key_array.len())
+        .add_buffer(key_array.data().buffers()[0].clone())
+        .add_child_data(values.data().clone());
+        match key_array.data().null_buffer() {
+            Some(buffer) if key_array.data().null_count() > 0 => {
+                data = data
+                    .null_bit_buffer(Some(buffer.clone()))
+                    .null_count(key_array.data().null_count());
+            }
+            _ => data = data.null_count(0),
+        }
+        let array = unsafe { data.build_unchecked() };
+
+        Self::new(Arc::new(array.into()))
     }
 
     pub fn len(&self) -> usize {
@@ -40,6 +58,7 @@ impl Matrix {
 
         let compound_key = self.array.keys().value(index);
         let [offset, length] = bytemuck::cast::<i64, [i32; 2]>(compound_key);
+        println!("offset: {}, length: {}", offset, length);
         let array = self.array.values().slice(offset as usize, length as usize);
 
         Some(array)

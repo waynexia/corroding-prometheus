@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, SystemTime};
 
-use arrow::array::{ArrowPrimitiveType, PrimitiveArray, TimestampMillisecondArray};
+use arrow::array::{PrimitiveArray, TimestampMillisecondArray};
 use arrow::datatypes::{SchemaRef, TimestampMillisecondType};
 use arrow::error::Result as ArrowResult;
 use arrow::record_batch::RecordBatch;
@@ -85,6 +85,27 @@ pub struct SeriesNormalizeExec {
     interval: Millisecond,
 
     input: Arc<dyn ExecutionPlan>,
+}
+
+impl SeriesNormalizeExec {
+    pub fn new(
+        start: Millisecond,
+        end: Millisecond,
+        offset: Millisecond,
+        lookback_delta: Millisecond,
+        interval: Millisecond,
+
+        input: Arc<dyn ExecutionPlan>,
+    ) -> Self {
+        Self {
+            start,
+            end,
+            offset,
+            lookback_delta,
+            interval,
+            input,
+        }
+    }
 }
 
 impl ExecutionPlan for SeriesNormalizeExec {
@@ -168,22 +189,21 @@ impl SeriesNormalizeStream {
         let ts_column = input
             .column(ts_column_idx)
             .as_any()
-            .downcast_ref::<Arc<PrimitiveArray<TimestampMillisecondType>>>()
+            .downcast_ref::<PrimitiveArray<TimestampMillisecondType>>()
             .unwrap();
 
         // prepare two vectors
         let mut cursor = 0;
-        let expected_iter = (self.start..self.end).step_by(self.interval as usize);
+        let expected_iter = (self.start..=self.end).step_by(self.interval as usize);
 
         // calculate the offsets to take
-        for expected_ts in expected_iter {
-            'next:
+        'next: for expected_ts in expected_iter {
             // first, search toward end to see if there is matched timestamp
             while cursor < ts_column.len() {
                 let curr = ts_column.value(cursor);
                 if curr == expected_ts {
                     take_indices.push(Some(cursor));
-                    break 'next;
+                    continue 'next;
                 } else if curr > expected_ts {
                     break;
                 }
@@ -209,13 +229,14 @@ impl SeriesNormalizeStream {
         }
 
         // take record batch
+        println!("Normalize take indices: {:?}", take_indices);
         let record_batch = utils::take_record_batch_optional(input, take_indices);
 
         // bias the timestamp column by offset
         let ts_column = record_batch
             .column(ts_column_idx)
             .as_any()
-            .downcast_ref::<Arc<PrimitiveArray<TimestampMillisecondType>>>()
+            .downcast_ref::<PrimitiveArray<TimestampMillisecondType>>()
             .unwrap();
         let ts_column_biased = Arc::new(TimestampMillisecondArray::from_iter(
             ts_column.iter().map(|ts| ts.map(|ts| ts - self.offset)),
@@ -223,6 +244,11 @@ impl SeriesNormalizeStream {
         let mut columns = record_batch.columns().to_vec();
         columns[ts_column_idx] = ts_column_biased;
         let new_record_batch = RecordBatch::try_new(record_batch.schema(), columns)?;
+
+        println!(
+            "Normalize Result:\n{}",
+            arrow::util::pretty::pretty_format_batches(&[new_record_batch.clone()]).unwrap()
+        );
 
         Ok(new_record_batch)
     }
