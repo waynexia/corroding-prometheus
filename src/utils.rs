@@ -4,8 +4,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use arrow::array::{
     Array, Float64Builder, Int64Builder, PrimitiveArray, StringArray, StringBuilder,
 };
-use arrow::datatypes::{Float64Type, Int64Type};
+use arrow::datatypes::{Float64Type, Int64Type, Schema};
 use arrow::record_batch::RecordBatch;
+use datafusion::common::DFSchema;
+
+pub fn df_schema_to_arrow_schema(df_schema: &DFSchema) -> Schema {
+    df_schema.try_into().unwrap()
+}
 
 pub fn system_time_to_i64(t: SystemTime) -> i64 {
     t.duration_since(UNIX_EPOCH).map_or_else(

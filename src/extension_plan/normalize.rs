@@ -13,11 +13,7 @@ use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
 use datafusion::physical_plan::{ExecutionPlan, RecordBatchStream, SendableRecordBatchStream};
 use futures::{Stream, StreamExt};
 
-use crate::utils;
-
-type Millisecond = <TimestampMillisecondType as ArrowPrimitiveType>::Native;
-
-const TIMESTAMP_COLUMN_NAME: &str = "timestamp";
+use crate::{utils, Millisecond, TIMESTAMP_COLUMN_NAME};
 
 #[derive(Debug)]
 pub struct SeriesNormalize {

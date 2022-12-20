@@ -1,5 +1,8 @@
 #![feature(result_flattening)]
 
+use arrow::array::ArrowPrimitiveType;
+use arrow::datatypes::TimestampMillisecondType;
+
 mod eval_stmt;
 mod extension_plan;
 mod matrix;
@@ -7,17 +10,6 @@ mod planner;
 mod udf;
 mod utils;
 
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+type Millisecond = <TimestampMillisecondType as ArrowPrimitiveType>::Native;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+const TIMESTAMP_COLUMN_NAME: &str = "timestamp";
