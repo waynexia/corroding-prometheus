@@ -21,7 +21,7 @@ This RFC proposes to add support for PromQL. Because it was created in Go, we ca
 ## Overview
 One of the goals is to make use of our existing basic operators, execution model and runtime to reduce the work. So the entire proposal is built on top of Apache Arrow DataFusion. The rewrote PromQL logic is manifested as `Expr` or `Execution Plan` in DataFusion. And both the intermediate data structure and the result is in the format of `Arrow`'s `RecordBatch`.
 
-The following sections are organized in a top-down manner. First 
+The following sections are organized in a top-down manner. Starts with evaluation procedure. Then introduces the building blocks of our new PromQL operation. Follows by an explanation of data model. And end with an example logic plan.
 
 *This RFC is heavily related to Prometheus and PromQL. It won't repeat some basic concepts of them.*
 
@@ -110,30 +110,52 @@ PromQL has around 70 expressions and functions. But luckily we can reuse lots of
 
 *: *`extrapolate_factor` is one of the "dark sides" in PromQL. In short it's a translation of this [paragraph](https://github.com/prometheus/prometheus/blob/0372e259baf014bbade3134fd79bcdfd8cbdef2c/promql/functions.go#L134-L159)*
 
-
-
-## Data Preparation
-
-Corresponding to PromQL's `populateSeries` procedure. This step will be translated into two or three logical plan nodes
-- `TableScan`: Read the data from table. This is a standard table scan operation.
-- `SeriesNormalize`
-- `Filter`: To ensure the result of is correct, an extra `Filter` node may also be required if the table implement cannot perform "exact" filter.
-
-This step reads data from the underlying table. And to simplify this procedure, assumes the returned data is already organized (grouped) in time series format.
-
-`SeriesNormalize` is a "extension plan" proposed in this RFC. It handles the logic like offset, look back, alignment, etc in PromQL. And more to support the following columnar evaluation.
-
-TODO: detail this section
+To reuse those common calculation logic, we can break them into serval expressions, and assemble in the logic planning phase. Like `rate()` in PromQL can be represented as `increase / extrapolate_factor`.
 
 ## Data Model
 
-Four basic types:
-- Scalar
-- String
-- Instant Vector
-- Range Vector
+This part explains how data is represented. Following the data model in GreptimeDB, all the data are stored as table, with tag columns, timestamp column and value column. Table to record batch is very straightforward. So an instant vector can be thought of as a row (though as said before, we don't use instant vectors) in the table. Given four basic types in PromQL: scalar, string, instant vector and range vector, only the last "range vector" need some tricks to adapt our columnar calculation.
 
-To maximize the performance, I propose to perform calculation in columnar, rather than by timestamp like PromQL. Which means both instant vector and range vector cannot be transplanted as-is.
+Range vector is some sort of matrix, it's consisted of small one-dimension vectors, with each being an input of range function. And, applying range function to a range vector can be thought of kind of convolution.
+
+![range_vector_with_matrix](range_vector_with_matrix.png)
+
+(Left is an illustration of range vector. Notice the Y-axis has no meaning, it's just put different pieces separately. The right side is an imagined "matrix" as range function. Multiplying the left side to it can get a one-dimension "matrix" with four elements. That's the evaluation result of a range vector.)
+
+To adapt this range vector to record batch, it should be represented by a column. This RFC proposes to use `DictionaryArray` from Arrow to represent range vector, or `Matrix`. This is "misusing" `DictionaryArray` to ship some additional information about an array. Because the range vector is sliding over one series, we only need to know the `offset` and `length` of each slides to reconstruct the matrix from an array:
+
+![matrix_from_array](matrix_from_array.png)
+
+The length is not fixed, it depends on the input's timestamp. An PoC implementation of `Matrix` and `increase()` can be found in [this repo](https://github.com/waynexia/corroding-prometheus).
+
+## Example
+
+The logic plan of PromQL query
+```promql
+# start: 2022-12-20T10:00:00
+# end: 2022-12-21T10:00:00
+# interval: 1m
+# lookback: 30s
+sum (rate(request_duration[5m])) by (idc)
+```
+looks like
+
+<!-- title: 'PromAggregator: \naggr = sum, column = idc'
+operator: prom
+inputs:
+- title: 'Matrix Manipulator: \ninterval = 1m, range = 5m, expr = div(increase(value), extrapolate_factor(timestamp))'
+  operator: prom
+  inputs:
+  - title: 'Series Normalize: \noffset = 0'
+    operator: prom
+    inputs:
+    - title: 'Filter: \ntimetamp > 2022-12-20T10:00:00 && timestamp < 2022-12-21T10:00:00'
+      operator: filter
+      inputs:
+      - title: 'Table Scan: \ntable = request_duration, timetamp > 2022-12-20T10:00:00 && timestamp < 2022-12-21T10:00:00'
+        operator: scan -->
+
+![example](example.png)
 
 # Drawbacks
 
